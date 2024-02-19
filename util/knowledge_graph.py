@@ -1,9 +1,100 @@
 # coding:utf-8
 from py2neo import Graph, Node, Relationship
-from py2neo.data import walk
+from py2neo.data import walk, Subgraph
+from tqdm import tqdm
+import json
 
-# 连接neo4j数据库，输入地址、用户名、密码
-graph = Graph('http://localhost:7474', username='neo4j', password='admin')
+def batch_create(graph, nodes_list, relations_list):
+    """
+        批量创建节点/关系,nodes_list和relations_list不同时为空即可
+        特别的：当利用关系创建节点时，可使得nodes_list=[]
+    :param graph: Graph()
+    :param nodes_list: Node()集合
+    :param relations_list: Relationship集合
+    :return:
+    """
+
+    subgraph = Subgraph(nodes_list, relations_list)
+    tx_ = graph.begin()
+    tx_.create(subgraph)
+    graph.commit(tx_)
+
+if __name__ == '__main__':
+    # 连接neo4j
+    graph = Graph("neo4j://localhost:7687", auth=("neo4j", "tiamo"))
+    
+    # 读取 JSON_JD 文件
+    with open("/Users/bytedance/Desktop/ZFS/Resume_Recommender/merged_1700.json", "r") as json_file:
+        data_job = json.load(json_file)
+    # 读取 JSON_CV 文件
+    with open("/Users/bytedance/Desktop/ZFS/Resume_Recommender/merged_resume.json", "r") as json_file:
+        data_jd = json.load(json_file)
+
+    i,j = 0,0
+    id_skill_mapping = {}
+    nodes_list = []
+    # 循环遍历数据
+for item in tqdm(data_job, desc="Inserting JD data"):
+    jd_id = str(item['id'])
+    node_JD = Node("岗位", name=f"岗位{jd_id}")
+    nodes_list.append(node_JD)
+    # 创建job和skill之间的关系
+    relations_list = []
+    for annotation in item['annotations']:
+        for label_info in annotation['result']:
+            if '技能' in label_info['value']['labels']:
+                skill_name = label_info['value']['text']
+                 # 检查技能是否已存在
+                existing_skill_node = next((node for node in nodes_list if node['name'] == skill_name), None)
+
+                if existing_skill_node is None:
+                    # 技能不存在，创建新技能节点
+                    node_Skill = Node("技能", name=f"{skill_name}")
+                    nodes_list.append(node_Skill)
+
+                    # 创建技能与岗位之间的关系
+                    relation_Skill_Job = Relationship(node_JD, "需要", node_Skill)
+                    relations_list.append(relation_Skill_Job)
+                else:
+                    # 技能已存在，使用已有技能节点
+                    node_Skill = existing_skill_node
+
+                    # 创建技能与简历之间的关系
+                    relation_Skill_Resume = Relationship(node_JD, "需要", node_Skill)
+                    relations_list.append(relation_Skill_Resume)
+    # 使用批量创建函数
+    batch_create(graph, nodes_list, relations_list)
+
+for item in tqdm(data_jd, desc="Inserting CV data"):
+    cv_id = str(item['id'])
+    node_CV = Node("简历", name=f"简历{cv_id}")
+    nodes_list.append(node_CV)
+    # 创建job和skill之间的关系
+    relations_list = []
+    for annotation in item['annotations']:
+        for label_info in annotation['result']:
+            if '技能' in label_info['value']['labels']:
+                skill_name = label_info['value']['text']
+                 # 检查技能是否已存在
+                existing_skill_node = next((node for node in nodes_list if node['name'] == skill_name), None)
+
+                if existing_skill_node is None:
+                    # 技能不存在，创建新技能节点
+                    node_Skill = Node("技能", name=f"{skill_name}")
+                    nodes_list.append(node_Skill)
+
+                    # 创建技能与岗位之间的关系
+                    relation_Skill_Job = Relationship(node_CV, "掌握", node_Skill)
+                    relations_list.append(relation_Skill_Job)
+                else:
+                    # 技能已存在，使用已有技能节点
+                    node_Skill = existing_skill_node
+
+                    # 创建技能与简历之间的关系
+                    relation_Skill_Resume = Relationship(node_CV, "掌握", node_Skill)
+                    relations_list.append(relation_Skill_Resume)
+    # 使用批量创建函数
+    batch_create(graph, nodes_list, relations_list)
 
 
 # 查询root节点相连的n度 子 节点,后继节点
@@ -246,5 +337,5 @@ def cal_similarity(i, j):
     return count / length_of_jd
 
 
-if __name__ == '__main__':
-    print(is_language_node("java"))
+# if __name__ == '__main__':
+#     print(is_language_node("java"))
